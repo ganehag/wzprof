@@ -59,6 +59,22 @@ func (prog *program) run(ctx context.Context) error {
 
 	p := wzprof.ProfilingFor(wasmCode)
 
+	prepareRuntime := wazero.NewRuntimeWithConfig(ctx, wazero.NewRuntimeConfig().
+		WithDebugInfoEnabled(true).
+		WithCustomSections(true))
+	stdout.Printf("compiling wasm module %s", prog.filePath)
+	prepareCompiledModule, err := prepareRuntime.CompileModule(ctx, wasmCode)
+	if err != nil {
+		_ = prepareRuntime.Close(ctx)
+		return fmt.Errorf("compiling wasm module: %w", err)
+	}
+	err = p.Prepare(prepareCompiledModule)
+	_ = prepareCompiledModule.Close(ctx)
+	_ = prepareRuntime.Close(ctx)
+	if err != nil {
+		return fmt.Errorf("preparing wasm module: %w", err)
+	}
+
 	cpu := p.CPUProfiler(wzprof.HostTime(prog.hostTime))
 	mem := p.MemoryProfiler(wzprof.InuseMemory(prog.inuseMemory))
 
@@ -77,24 +93,19 @@ func (prog *program) run(ctx context.Context) error {
 			listeners[i] = wzprof.Sample(prog.sampleRate, lstn)
 		}
 	}
-
-	ctx = context.WithValue(ctx,
-		experimental.FunctionListenerFactoryKey{},
-		experimental.MultiFunctionListenerFactory(listeners...),
-	)
+	if len(listeners) > 0 {
+		ctx = experimental.WithFunctionListenerFactory(ctx,
+			experimental.MultiFunctionListenerFactory(listeners...),
+		)
+	}
 
 	runtime := wazero.NewRuntimeWithConfig(ctx, wazero.NewRuntimeConfig().
 		WithDebugInfoEnabled(true).
 		WithCustomSections(true))
 
-	stdout.Printf("compiling wasm module %s", prog.filePath)
 	compiledModule, err := runtime.CompileModule(ctx, wasmCode)
 	if err != nil {
 		return fmt.Errorf("compiling wasm module: %w", err)
-	}
-	err = p.Prepare(compiledModule)
-	if err != nil {
-		return fmt.Errorf("preparing wasm module: %w", err)
 	}
 
 	if prog.pprofAddr != "" {
