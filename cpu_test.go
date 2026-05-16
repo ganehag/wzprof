@@ -10,20 +10,20 @@ import (
 )
 
 func BenchmarkCPUProfilerOn(b *testing.B) {
-	p := ProfilingFor(nil).CPUProfiler()
+	p := mustPrepareForProfilerTests(ProfilingFor(nil)).CPUProfiler()
 	p.StartProfile()
 	benchmarkFunctionListener(b, p)
 }
 
 func BenchmarkCPUProfilerOff(b *testing.B) {
-	p := ProfilingFor(nil).CPUProfiler()
+	p := mustPrepareForProfilerTests(ProfilingFor(nil)).CPUProfiler()
 	benchmarkFunctionListener(b, p)
 }
 
 func TestCPUProfilerTime(t *testing.T) {
 	currentTime := int64(0)
 
-	p := ProfilingFor(nil).CPUProfiler(
+	p := mustPrepareForProfilerTests(ProfilingFor(nil)).CPUProfiler(
 		TimeFunc(func() int64 { return currentTime }),
 	)
 
@@ -98,6 +98,15 @@ func TestCPUProfilerTime(t *testing.T) {
 	assertStackCount(t, p.counts, trace0, 1, d0)
 	assertStackCount(t, p.counts, trace1, 1, d1)
 	assertStackCount(t, p.counts, trace2, 1, d2)
+}
+
+func mustPrepareForProfilerTests(p *Profiling) *Profiling {
+	// These tests use synthetic wazerotest modules and exercise CPUProfiler's
+	// listener bookkeeping directly. They do not need DWARF/Go/Python symbol
+	// preparation, but CPUProfiler intentionally requires the same lifecycle as
+	// real runtime usage: ProfilingFor -> CompileModule -> Prepare -> CPUProfiler.
+	p.prepareCalled = true
+	return p
 }
 
 func assertStackCount(t *testing.T, counts stackCounterMap, trace stackTrace, count, total int64) {
